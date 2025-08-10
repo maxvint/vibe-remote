@@ -140,8 +140,6 @@ See `CONTRIBUTING.md`. By participating you agree to `CODE_OF_CONDUCT.md`.
 
 MIT. See `LICENSE`.
 
-## Security
-
 ## Security & Ops
 
 - **Secrets**: Never commit tokens. Use `.env`. Rotate regularly.
