@@ -46,6 +46,22 @@ Vibe Remote 把 AI 写代码搬到聊天软件。你在 Slack/Telegram 输入意
 - `IMFactory` 通过 `IM_PLATFORM` 动态创建客户端
 - `Controller` 统一编排会话、格式化与命令路由
 
+## 先决条件
+
+- 必须安装 Claude Code CLI
+
+安装：
+
+```bash
+npm install -g @anthropic-ai/claude-code
+```
+
+验证：
+
+```bash
+claude --help
+```
+
 ## 快速开始
 
 1. 安装依赖

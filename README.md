@@ -46,6 +46,22 @@ Vibe Remote lets you operate coding agents via IM. Type in Slack or Telegram to 
 - `IMFactory` to construct clients by `IM_PLATFORM`
 - `Controller` orchestrates sessions, formatting, and command routing
 
+## Prerequisites
+
+- Claude Code CLI (required)
+
+Install:
+
+```bash
+npm install -g @anthropic-ai/claude-code
+```
+
+Verify:
+
+```bash
+claude --help
+```
+
 ## Quick Start
 
 1. Install dependencies
