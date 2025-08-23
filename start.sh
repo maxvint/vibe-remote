@@ -5,6 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOG_DIR="$SCRIPT_DIR/logs"
 LOG_FILE="$LOG_DIR/bot_$(date +%Y%m%d_%H%M%S).log"
 PID_FILE="$SCRIPT_DIR/.bot.pid"
+MAIN_PATH="$SCRIPT_DIR/main.py"
 
 # Create logs directory if it doesn't exist
 mkdir -p "$LOG_DIR"
@@ -96,7 +97,7 @@ echo "Bot started at: $(date)" >> "$LOG_FILE"
 echo "============================================" >> "$LOG_FILE"
 
 # Run python in unbuffered mode for real-time logging
-nohup python3 -u main.py >> "$LOG_FILE" 2>&1 &
+nohup python3 -u "$MAIN_PATH" >> "$LOG_FILE" 2>&1 &
 
 # Save new PID
 NEW_PID=$!

@@ -3,6 +3,7 @@
 # Get the absolute path of current directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PID_FILE="$SCRIPT_DIR/.bot.pid"
+MAIN_PATH="$SCRIPT_DIR/main.py"
 
 echo "Stopping Claude Proxy..."
 
@@ -11,11 +12,9 @@ if [ -f "$PID_FILE" ]; then
     
     # Check if the process exists
     if ps -p "$PID" > /dev/null 2>&1; then
-        # Verify it's actually our python process in the correct directory
+        # Verify it's our python process by absolute main.py path
         PROCESS_CMD=$(ps -p "$PID" -o command= 2>/dev/null || echo "")
-        PROCESS_CWD=$(lsof -p "$PID" -a -d cwd -Fn 2>/dev/null | grep '^n' | cut -c2- || echo "")
-        
-        if [[ "$PROCESS_CMD" == *"python"*"main.py"* ]] && [[ "$PROCESS_CWD" == "$SCRIPT_DIR" ]]; then
+        if [[ "$PROCESS_CMD" == *"$MAIN_PATH"* ]]; then
             echo "Found bot process (PID: $PID), stopping..."
             kill -TERM "$PID" 2>/dev/null
             
