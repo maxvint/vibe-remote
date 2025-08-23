@@ -21,11 +21,9 @@ kill_current_instance() {
         
         # Check if the process exists and is our process
         if ps -p "$OLD_PID" > /dev/null 2>&1; then
-            # Verify it's actually our python process in the correct directory
+            # Verify it's our python process by absolute main.py path
             PROCESS_CMD=$(ps -p "$OLD_PID" -o command= 2>/dev/null || echo "")
-            PROCESS_CWD=$(lsof -p "$OLD_PID" -a -d cwd -Fn 2>/dev/null | grep '^n' | cut -c2- || echo "")
-            
-            if [[ "$PROCESS_CMD" == *"python"*"main.py"* ]] && [[ "$PROCESS_CWD" == "$SCRIPT_DIR" ]]; then
+            if [[ "$PROCESS_CMD" == *"$MAIN_PATH"* ]]; then
                 echo "Found running instance (PID: $OLD_PID), stopping..."
                 kill -TERM "$OLD_PID" 2>/dev/null
                 
