@@ -22,6 +22,93 @@ from core.update_checker import UpdateChecker
 logger = logging.getLogger(__name__)
 
 
+class GitHubConsumerBridge:
+    """Bridge to run GitHub consumer alongside Slack.
+
+    Supports two modes:
+    1. Polling mode: Poll worker for events (legacy/fallback)
+    2. Push mode: Receive events via HTTP webhook (preferred)
+    """
+
+    def __init__(self, github_client, message_handler, config=None):
+        self.github_client = github_client
+        self.message_handler = message_handler
+        self.config = config
+        self._poll_task: Optional[asyncio.Task] = None
+        self._webhook_server = None
+
+    async def start(self):
+        """Start the GitHub consumer (polling and/or webhook server)."""
+        if not self.github_client:
+            return
+
+        # Set event handler for both modes
+        self.github_client.consumer.set_event_handler(
+            self._handle_github_event
+        )
+
+        # Start webhook server for push mode
+        await self._start_webhook_server()
+
+        # Optionally start polling as fallback
+        enable_polling = True
+        if self.config and hasattr(self.config, 'github') and self.config.github:
+            enable_polling = getattr(self.config.github, 'enable_polling', True)
+
+        if enable_polling:
+            self._poll_task = asyncio.create_task(
+                self.github_client.consumer.poll_loop()
+            )
+            logger.info("GitHub consumer polling started (fallback mode)")
+
+        logger.info("GitHub consumer bridge started")
+
+    async def _start_webhook_server(self):
+        """Start the HTTP webhook server."""
+        try:
+            from modules.im.github.webhook_server import GitHubWebhookServer
+
+            # Get config
+            host = "0.0.0.0"
+            port = 5124
+            auth_token = None
+
+            if self.config and hasattr(self.config, 'github') and self.config.github:
+                port = getattr(self.config.github, 'webhook_server_port', 5124)
+                auth_token = getattr(self.config.github, 'push_token', None)
+
+            self._webhook_server = GitHubWebhookServer(
+                host=host,
+                port=port,
+                auth_token=auth_token,
+            )
+            self._webhook_server.set_event_handler(self._handle_github_event)
+            await self._webhook_server.start()
+        except ImportError as e:
+            logger.warning(f"Webhook server not available (missing aiohttp?): {e}")
+        except Exception as e:
+            logger.error(f"Failed to start webhook server: {e}")
+
+    async def _handle_github_event(self, context: MessageContext, message_text: str):
+        """Handle GitHub event by routing to message handler."""
+        logger.info(f"GitHub event received: {message_text[:100]}...")
+        await self.message_handler.handle_user_message(context, message_text)
+
+    def stop(self):
+        """Stop the GitHub consumer."""
+        if self.github_client:
+            self.github_client.consumer.stop()
+        if self._poll_task and not self._poll_task.done():
+            self._poll_task.cancel()
+        logger.info("GitHub consumer bridge stopped")
+
+    async def stop_async(self):
+        """Stop the GitHub consumer (async version)."""
+        self.stop()
+        if self._webhook_server:
+            await self._webhook_server.stop()
+
+
 class Controller:
     """Main controller that coordinates all bot operations"""
 
@@ -44,6 +131,13 @@ class Controller:
 
         # Initialize handlers
         self._init_handlers()
+
+        # Initialize GitHub bridge after handlers are ready
+        if self.github_client:
+            self.github_bridge = GitHubConsumerBridge(
+                self.github_client, self.message_handler, self.config
+            )
+            logger.info("GitHub consumer bridge initialized")
 
         # Initialize agents (depends on handlers/session handler)
         self._init_agents()
@@ -97,6 +191,20 @@ class Controller:
                 self.im_client.set_settings_manager(self.settings_manager)
                 self.im_client.set_controller(self)
                 logger.info("Injected settings_manager and controller into SlackBot")
+
+        # Initialize GitHub client if configured (runs alongside Slack)
+        self.github_client = None
+        self.github_bridge = None
+        if hasattr(self.config, 'github') and self.config.github:
+            try:
+                from modules.im.github import GitHubIMClient
+                self.github_client = GitHubIMClient(self.config.github)
+                self.github_client.set_settings_manager(self.settings_manager)
+                self.github_client.set_controller(self)
+                logger.info("GitHub client initialized (will run alongside Slack)")
+            except Exception as e:
+                logger.error(f"Failed to initialize GitHub client: {e}")
+                self.github_client = None
 
     def _init_handlers(self):
         """Initialize all handlers with controller reference"""
@@ -169,12 +277,25 @@ class Controller:
         except Exception as e:
             logger.error(f"Failed to start update checker: {e}", exc_info=True)
 
+        # Start GitHub consumer bridge if configured
+        if self.github_bridge:
+            try:
+                await self.github_bridge.start()
+                logger.info("GitHub consumer bridge started successfully")
+            except Exception as e:
+                logger.error(f"Failed to start GitHub consumer bridge: {e}", exc_info=True)
+
     # Utility methods used by handlers
 
     def get_cwd(self, context: MessageContext) -> str:
         """Get working directory based on context (channel/chat)
         This is the SINGLE source of truth for CWD
         """
+        # For GitHub: use repo-specific directory
+        is_github = context.platform_specific.get("platform") == "github" if context.platform_specific else False
+        if is_github:
+            return self._get_github_repo_cwd(context)
+
         # Get the settings key based on context
         settings_key = self._get_settings_key(context)
 
@@ -202,6 +323,65 @@ class Controller:
         # Last resort: current directory
         return os.getcwd()
 
+    def _get_github_repo_cwd(self, context: MessageContext) -> str:
+        """Get working directory for GitHub repo.
+
+        Priority:
+        1. repo_mappings["owner/repo"] - explicit mapping
+        2. repos_base_dir/{owner}/{repo} - auto-generated path
+        3. Default CWD from config
+        """
+        ps = context.platform_specific or {}
+        owner = ps.get("owner", "")
+        repo = ps.get("repo", "")
+
+        if not owner or not repo:
+            # Fallback: parse from channel_id (github:owner/repo)
+            channel_id = context.channel_id or ""
+            if channel_id.startswith("github:"):
+                parts = channel_id[7:].split("/")
+                if len(parts) >= 2:
+                    owner, repo = parts[0], parts[1]
+
+        if not owner or not repo:
+            logger.warning("Cannot determine GitHub repo from context, using default CWD")
+            default_cwd = self.config.claude.cwd
+            return os.path.abspath(os.path.expanduser(default_cwd)) if default_cwd else os.getcwd()
+
+        repo_full = f"{owner}/{repo}"
+
+        # Priority 1: Check explicit repo_mappings
+        if hasattr(self.config, 'github') and self.config.github:
+            repo_mappings = getattr(self.config.github, 'repo_mappings', {}) or {}
+            if repo_full in repo_mappings:
+                mapped_path = repo_mappings[repo_full]
+                abs_path = os.path.abspath(os.path.expanduser(mapped_path))
+                if os.path.exists(abs_path):
+                    logger.info(f"Using mapped CWD for {repo_full}: {abs_path}")
+                    return abs_path
+                else:
+                    logger.warning(f"Mapped path for {repo_full} does not exist: {abs_path}")
+
+        # Priority 2: Auto-generated path from repos_base_dir
+        base_dir = "~/.vibe_remote/repos"
+        if hasattr(self.config, 'github') and self.config.github:
+            base_dir = getattr(self.config.github, 'repos_base_dir', base_dir) or base_dir
+
+        repo_path = os.path.join(os.path.expanduser(base_dir), owner, repo)
+        abs_path = os.path.abspath(repo_path)
+
+        # Create directory if it doesn't exist
+        if not os.path.exists(abs_path):
+            try:
+                os.makedirs(abs_path, exist_ok=True)
+                logger.info(f"Created GitHub repo CWD: {abs_path}")
+            except OSError as e:
+                logger.error(f"Failed to create GitHub repo CWD '{abs_path}': {e}")
+                default_cwd = self.config.claude.cwd
+                return os.path.abspath(os.path.expanduser(default_cwd)) if default_cwd else os.getcwd()
+
+        return abs_path
+
     def _get_settings_key(self, context: MessageContext) -> str:
         """Get settings key based on context"""
         # Slack only in V2
@@ -218,6 +398,13 @@ class Controller:
                 platform_specific=context.platform_specific,
             )
         return context
+
+    def _get_im_client_for_context(self, context: MessageContext) -> BaseIMClient:
+        """Get the appropriate IM client based on context platform."""
+        platform = context.platform_specific.get("platform") if context.platform_specific else None
+        if platform == "github" and self.github_client:
+            return self.github_client
+        return self.im_client
 
     def _get_consolidated_message_key(self, context: MessageContext) -> str:
         settings_key = self._get_settings_key(context)
@@ -302,8 +489,9 @@ class Controller:
 
         Priority:
         1. channel_routing.agent_backend (from settings.json)
-        2. AgentRouter platform default (configured in code)
-        3. AgentService.default_agent ("claude")
+        2. GitHub default_agent (for GitHub platform)
+        3. AgentRouter platform default (configured in code)
+        4. AgentService.default_agent ("claude")
         """
         settings_key = self._get_settings_key(context)
 
@@ -318,6 +506,13 @@ class Controller:
                     f"Channel routing specifies '{routing.agent_backend}' but agent is not registered, "
                     f"falling back to static routing"
                 )
+
+        # Check GitHub default_agent for GitHub platform
+        is_github = context.platform_specific.get("platform") == "github" if context.platform_specific else False
+        if is_github and hasattr(self.config, 'github') and self.config.github:
+            github_default = getattr(self.config.github, 'default_agent', None)
+            if github_default and github_default in self.agent_service.agents:
+                return github_default
 
         # Fall back to static routing
         resolved = self.agent_router.resolve(self.config.platform, settings_key)
@@ -364,6 +559,10 @@ class Controller:
         if not text or not text.strip():
             return
 
+        # Get the appropriate IM client for this context
+        im_client = self._get_im_client_for_context(context)
+        is_github = context.platform_specific.get("platform") == "github" if context.platform_specific else False
+
         canonical_type = self.settings_manager._canonicalize_message_type(
             message_type or ""
         )
@@ -371,7 +570,7 @@ class Controller:
 
         if canonical_type == "notify":
             target_context = self._get_target_context(context)
-            await self.im_client.send_message(
+            await im_client.send_message(
                 target_context, text, parse_mode=parse_mode
             )
             return
@@ -379,19 +578,20 @@ class Controller:
         if canonical_type == "result":
             target_context = self._get_target_context(context)
             if len(text) <= self._get_result_max_chars():
-                await self.im_client.send_message(
+                await im_client.send_message(
                     target_context, text, parse_mode=parse_mode
                 )
                 return
 
             summary = self._build_result_summary(text, self._get_result_max_chars())
-            await self.im_client.send_message(
+            await im_client.send_message(
                 target_context, summary, parse_mode=parse_mode
             )
 
-            if self.config.platform == "slack" and hasattr(self.im_client, "upload_markdown"):
+            # File upload only for Slack
+            if not is_github and hasattr(im_client, "upload_markdown"):
                 try:
-                    await self.im_client.upload_markdown(
+                    await im_client.upload_markdown(
                         target_context,
                         title="result.md",
                         content=text,
@@ -399,7 +599,7 @@ class Controller:
                     )
                 except Exception as err:
                     logger.warning(f"Failed to upload result attachment: {err}")
-                    await self.im_client.send_message(
+                    await im_client.send_message(
                         target_context,
                         "无法上传附件（缺少 files:write 权限或上传失败）。需要我改成分条发送吗？",
                         parse_mode=parse_mode,
@@ -418,6 +618,17 @@ class Controller:
                 settings_key,
                 preview,
             )
+            return
+
+        # For GitHub: send directly without consolidation (no edit support)
+        if is_github:
+            target_context = self._get_target_context(context)
+            try:
+                await im_client.send_message(
+                    target_context, text.strip(), parse_mode=parse_mode
+                )
+            except Exception as err:
+                logger.error(f"Failed to send GitHub message: {err}", exc_info=True)
             return
 
         consolidated_key = self._get_consolidated_message_key(context)
@@ -443,7 +654,7 @@ class Controller:
                 old_text = self._truncate_consolidated(old_text, max_bytes)
 
                 try:
-                    await self.im_client.edit_message(
+                    await im_client.edit_message(
                         target_context,
                         existing_message_id,
                         text=old_text,
@@ -473,7 +684,7 @@ class Controller:
                 send_ok = False
                 if existing_message_id:
                     try:
-                        await self.im_client.edit_message(
+                        await im_client.edit_message(
                             target_context,
                             existing_message_id,
                             text=first_part,
@@ -484,7 +695,7 @@ class Controller:
                         logger.warning(f"Failed to edit oversized Log Message: {err}")
                 else:
                     try:
-                        await self.im_client.send_message(
+                        await im_client.send_message(
                             target_context, first_part, parse_mode="markdown"
                         )
                         send_ok = True
@@ -513,7 +724,7 @@ class Controller:
 
             if existing_message_id:
                 try:
-                    ok = await self.im_client.edit_message(
+                    ok = await im_client.edit_message(
                         target_context,
                         existing_message_id,
                         text=updated,
@@ -527,7 +738,7 @@ class Controller:
                 self._consolidated_message_ids.pop(consolidated_key, None)
 
             try:
-                new_id = await self.im_client.send_message(
+                new_id = await im_client.send_message(
                     target_context, updated, parse_mode="markdown"
                 )
                 self._consolidated_message_ids[consolidated_key] = new_id
@@ -850,6 +1061,13 @@ class Controller:
             self.update_checker.stop()
         except Exception as e:
             logger.debug(f"Update checker cleanup skipped: {e}")
+
+        # Stop GitHub consumer bridge
+        try:
+            if self.github_bridge:
+                self.github_bridge.stop()
+        except Exception as e:
+            logger.debug(f"GitHub bridge cleanup skipped: {e}")
 
         # Cancel receiver tasks without awaiting (they may belong to other loops)
         try:

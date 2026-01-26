@@ -1,7 +1,7 @@
 """Message routing and Agent communication handlers"""
 
 import logging
-from typing import Optional
+from typing import Optional, Tuple
 
 from modules.agents import AgentRequest
 from modules.im import MessageContext
@@ -43,6 +43,69 @@ class MessageHandler:
                 platform_specific=context.platform_specific,
             )
         return context
+
+    def _is_github_context(self, context: MessageContext) -> bool:
+        """Check if context is from GitHub platform."""
+        return (context.platform_specific or {}).get("platform") == "github"
+
+    def _get_im_client_for_context(self, context: MessageContext):
+        """Get the appropriate IM client based on context platform."""
+        if self._is_github_context(context) and hasattr(self.controller, 'github_client'):
+            return self.controller.github_client
+        return self.im_client
+
+    def _has_existing_session(
+        self, settings_key: str, base_session_id: str, agent_name: str
+    ) -> bool:
+        """Check if there's an existing resume session for this agent."""
+        # Check agent-specific session (for Codex/OpenCode)
+        agent_session = self.settings_manager.get_agent_session_id(
+            settings_key, base_session_id, agent_name=agent_name
+        )
+        if agent_session:
+            return True
+
+        # Check Claude session
+        claude_session = self.settings_manager.get_claude_session_id(
+            settings_key, base_session_id
+        )
+        if claude_session:
+            return True
+
+        return False
+
+    def _build_github_context_message(
+        self, context: MessageContext, message: str
+    ) -> str:
+        """Build message with GitHub issue context for first-time requests.
+
+        Format:
+        ## Issue Context
+        **Title:** {issue_title}
+        **Description:**
+        {issue_body}
+
+        ## Request
+        {message}
+        """
+        ps = context.platform_specific or {}
+        issue_title = ps.get("issue_title", "")
+        issue_body = ps.get("issue_body", "")
+
+        if not issue_title and not issue_body:
+            return message
+
+        parts = ["## Issue Context"]
+
+        if issue_title:
+            parts.append(f"**Title:** {issue_title}")
+
+        if issue_body:
+            parts.append(f"**Description:**\n{issue_body}")
+
+        parts.append(f"\n## Request\n{message}")
+
+        return "\n".join(parts)
 
     async def handle_user_message(self, context: MessageContext, message: str):
         """Process regular user messages and route to configured agent"""
@@ -93,6 +156,22 @@ class MessageHandler:
             settings_key = self._get_settings_key(context)
 
             agent_name = self.controller.resolve_agent_for_context(context)
+
+            # For GitHub: add issue context to first-time requests
+            if self._is_github_context(context):
+                has_session = self._has_existing_session(
+                    settings_key, base_session_id, agent_name
+                )
+                if not has_session:
+                    # First request in this issue - include full issue context
+                    message = self._build_github_context_message(context, message)
+                    logger.info(
+                        f"GitHub first request: added issue context for {base_session_id}"
+                    )
+                else:
+                    logger.info(
+                        f"GitHub follow-up request: using existing session {base_session_id}"
+                    )
 
             matched_prefix = None
             subagent_message = None
@@ -154,11 +233,14 @@ class MessageHandler:
             ack_reaction_message_id = None
             ack_reaction_emoji = None
 
+            # Get the appropriate IM client for this context (Slack or GitHub)
+            context_im_client = self._get_im_client_for_context(context)
+
             if ack_mode == "message":
                 ack_context = self._get_target_context(context)
                 ack_text = self._get_ack_text(agent_name)
                 try:
-                    ack_message_id = await self.im_client.send_message(
+                    ack_message_id = await context_im_client.send_message(
                         ack_context, ack_text
                     )
                 except Exception as ack_err:
@@ -168,8 +250,9 @@ class MessageHandler:
                 try:
                     if context.message_id:
                         ack_reaction_message_id = context.message_id
-                        ack_reaction_emoji = ":eyes:"
-                        ok = await self.im_client.add_reaction(
+                        # Use "eyes" for GitHub (GitHub reaction name), ":eyes:" for Slack
+                        ack_reaction_emoji = "eyes" if self._is_github_context(context) else ":eyes:"
+                        ok = await context_im_client.add_reaction(
                             context, ack_reaction_message_id, ack_reaction_emoji
                         )
                         if not ok:
@@ -181,8 +264,9 @@ class MessageHandler:
 
             if subagent_name and context.message_id:
                 try:
-                    reaction = ":robot_face:"
-                    await self.im_client.add_reaction(
+                    # Use "rocket" for GitHub, ":robot_face:" for Slack
+                    reaction = "rocket" if self._is_github_context(context) else ":robot_face:"
+                    await context_im_client.add_reaction(
                         context,
                         context.message_id,
                         reaction,
@@ -191,7 +275,7 @@ class MessageHandler:
                     logger.debug(f"Failed to add subagent reaction: {err}")
                 if ack_reaction_message_id and ack_reaction_emoji:
                     try:
-                        await self.im_client.remove_reaction(
+                        await context_im_client.remove_reaction(
                             context, ack_reaction_message_id, ack_reaction_emoji
                         )
                     except Exception as err:
@@ -223,7 +307,7 @@ class MessageHandler:
                 elif ack_reaction_message_id and ack_reaction_emoji:
                     if not subagent_name:
                         try:
-                            await self.im_client.remove_reaction(
+                            await context_im_client.remove_reaction(
                                 context, ack_reaction_message_id, ack_reaction_emoji
                             )
                         except Exception as err:

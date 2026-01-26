@@ -99,6 +99,48 @@ class UpdateConfig:
 
 
 @dataclass
+class GitHubConfig(BaseIMConfig):
+    """GitHub App configuration for issue trigger integration."""
+    # GitHub App credentials (from GitHub App settings page)
+    app_id: str = ""
+    private_key: str = ""  # PEM format private key content
+    webhook_secret: str = ""
+
+    # OAuth settings
+    client_id: str = ""
+    client_secret: str = ""
+    callback_url: str = "http://localhost:5123/github/callback"
+
+    # Cloudflare Worker settings (for event polling)
+    worker_url: str = ""  # e.g., https://vibe-github-webhook.xxx.workers.dev
+    worker_token: str = ""  # Bearer token for worker API authentication
+
+    # Trigger settings
+    trigger_keyword: str = "@Codeholic"
+    trigger_on_issue_body: bool = False
+
+    # Default agent settings
+    default_agent: str = "claude"
+
+    # Working directory settings
+    repos_base_dir: str = "~/.vibe_remote/repos"  # Base dir for repo workspaces (fallback)
+    repo_mappings: dict = field(default_factory=dict)  # Map "owner/repo" -> local path
+
+    # Webhook server settings (for push mode)
+    webhook_server_port: int = 5124  # Port for receiving webhook pushes
+    push_token: str = ""  # Auth token for push requests
+    enable_polling: bool = True  # Enable polling as fallback
+
+    def validate(self) -> None:
+        # Allow empty config for initial setup
+        pass
+
+    def is_configured(self) -> bool:
+        """Check if GitHub integration is configured."""
+        return bool(self.app_id and self.private_key and self.worker_url)
+
+
+@dataclass
 class V2Config:
     mode: str
     version: str
@@ -108,6 +150,7 @@ class V2Config:
     gateway: Optional[GatewayConfig] = None
     ui: UiConfig = field(default_factory=UiConfig)
     update: UpdateConfig = field(default_factory=UpdateConfig)
+    github: Optional[GitHubConfig] = None
     ack_mode: str = "reaction"
 
     @classmethod
@@ -193,6 +236,15 @@ class V2Config:
         if ack_mode not in {"reaction", "message"}:
             raise ValueError("Config 'ack_mode' must be 'reaction' or 'message'")
 
+        # Parse GitHub config (optional)
+        github_payload = payload.get("github")
+        github = None
+        if github_payload is not None:
+            if not isinstance(github_payload, dict):
+                raise ValueError("Config 'github' must be an object")
+            github = GitHubConfig(**_filter_dataclass_fields(GitHubConfig, github_payload))
+            github.validate()
+
         return cls(
             mode=mode,
             version=payload.get("version", "v2"),
@@ -202,6 +254,7 @@ class V2Config:
             gateway=gateway,
             ui=ui,
             update=update,
+            github=github,
             ack_mode=ack_mode,
         )
 
@@ -225,6 +278,7 @@ class V2Config:
             "gateway": self.gateway.__dict__ if self.gateway else None,
             "ui": self.ui.__dict__,
             "update": self.update.__dict__,
+            "github": self.github.__dict__ if self.github else None,
             "ack_mode": self.ack_mode,
         }
         path.write_text(json.dumps(payload, indent=2), encoding="utf-8")

@@ -39,7 +39,10 @@
   "nav": {
     "dashboard": "仪表盘",
     "channels": "频道",
-    "doctor": "诊断"
+    "doctor": "诊断",
+    "githubRepos": "GitHub 仓库",
+    "noEnabledRepos": "暂无启用的仓库",
+    "configureGitHub": "配置 GitHub..."
   },
   "appShell": {
     "title": "Vibe Remote"
@@ -108,6 +111,37 @@
     "step4Item2": "输入 /invite @Vibe Remote",
     "step4Item3": "机器人现在可以接收此频道的消息了",
     "step4Tip": "也可以右键点击频道，选择「添加应用」。"
+  },
+  "githubConfig": {
+    "title": "GitHub 集成",
+    "description": "配置 GitHub Issue 触发器，通过 @提及与 AI Agent 交互。",
+    "skipGitHub": "跳过 GitHub 集成",
+    "skipGitHubHint": "您可以稍后在仪表盘中配置。",
+    "step1Title": "创建 GitHub App",
+    "step1Description": "创建 GitHub App 以接收 webhook 事件和发表评论。",
+    "createGitHubApp": "创建 GitHub App",
+    "requiredPermissions": "所需权限",
+    "appId": "App ID",
+    "privateKey": "私钥 (PEM)",
+    "privateKeyHint": "从 GitHub App 设置页面下载私钥，并粘贴内容到此处。",
+    "webhookSecret": "Webhook 密钥",
+    "step2Title": "配置 Cloudflare Worker",
+    "step2Description": "设置 webhook 接收器 URL 和用于事件轮询的 API 令牌。",
+    "workerUrl": "Worker URL",
+    "workerToken": "Worker API 令牌",
+    "workerTokenHint": "在 Cloudflare Worker 中配置的 Bearer 令牌，用于 API 认证。",
+    "step3Title": "触发设置",
+    "triggerKeyword": "触发关键词",
+    "triggerKeywordHint": "当 Issue 评论中提及此关键词时，机器人将响应。",
+    "defaultAgent": "默认 Agent",
+    "step4Title": "管理仓库",
+    "step4Description": "安装 GitHub App 后，配置启用哪些仓库。",
+    "refreshRepos": "刷新仓库",
+    "enabled": "已启用",
+    "disabled": "已禁用",
+    "noRepos": "未找到仓库，请先安装 GitHub App。",
+    "note": "注意",
+    "step4Note": "您需要先在仓库上安装 GitHub App，然后点击刷新即可在此处看到。"
   },
   "agentDetection": {
     "title": "Agent 配置",
@@ -213,7 +247,16 @@
     "updateHint": "从 {{from}} 更新到 {{to}}",
     "restarting": "正在重启...",
     "autoUpdate": "自动更新",
-    "autoUpdateHint": "空闲时自动安装"
+    "autoUpdateHint": "空闲时自动安装",
+    "githubIntegration": "GitHub 集成",
+    "githubAppId": "App ID",
+    "githubTriggerKeyword": "触发关键词",
+    "githubDefaultAgent": "默认 Agent",
+    "githubWorkerUrl": "Worker URL",
+    "githubRepos": "仓库",
+    "githubNoRepos": "未找到仓库，请先在仓库上安装 GitHub App。",
+    "githubNotConfigured": "GitHub 集成尚未配置。",
+    "githubConfigure": "配置 GitHub"
   },
   "doctor": {
     "title": "系统状态",

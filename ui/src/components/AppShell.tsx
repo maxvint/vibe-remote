@@ -1,8 +1,9 @@
 import React from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
-import { LayoutDashboard, MessageSquare, Activity } from 'lucide-react';
+import { LayoutDashboard, MessageSquare, Activity, Github, ChevronDown, ChevronRight } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useStatus } from '../context/StatusContext';
+import { useApi } from '../context/ApiContext';
 import { LanguageSwitcher } from './LanguageSwitcher';
 import { VersionBadge } from './VersionBadge';
 import clsx from 'clsx';
@@ -26,9 +27,53 @@ const NavItem = ({ to, icon: Icon, children }: { to: string; icon: any; children
 export const AppShell: React.FC = () => {
   const { t } = useTranslation();
   const { status } = useStatus();
+  const { githubInstallations, loadGithubInstallations } = useApi();
   const location = useLocation();
+  const [githubExpanded, setGithubExpanded] = React.useState(true);
+  const [config, setConfig] = React.useState<any>({});
 
   const isRunning = status.state === 'running';
+
+  // Load config and GitHub repos
+  React.useEffect(() => {
+    const load = async () => {
+      try {
+        const res = await fetch('/config');
+        if (res.ok) {
+          const cfg = await res.json();
+          setConfig(cfg);
+          if (cfg.github?.app_id && cfg.github?.worker_url) {
+            loadGithubInstallations();
+          }
+        }
+      } catch {
+        // ignore
+      }
+    };
+    load();
+  }, [loadGithubInstallations]);
+
+  // Get enabled repos
+  const enabledRepos = React.useMemo(() => {
+    console.log('[AppShell] computing enabledRepos, githubInstallations:', githubInstallations);
+    const repos: { installationId: string; fullName: string; name: string }[] = [];
+    for (const inst of githubInstallations) {
+      console.log('[AppShell] inst:', inst.id, 'repos:', inst.repos.map(r => ({ name: r.full_name, enabled: r.enabled })));
+      for (const repo of inst.repos) {
+        if (repo.enabled) {
+          repos.push({
+            installationId: inst.id,
+            fullName: repo.full_name,
+            name: repo.full_name.split('/')[1] || repo.full_name,
+          });
+        }
+      }
+    }
+    console.log('[AppShell] enabledRepos:', repos);
+    return repos;
+  }, [githubInstallations]);
+
+  const hasGitHubConfig = config.github?.app_id && config.github?.worker_url;
 
   if (location.pathname === '/setup') {
     return <Outlet />;
@@ -50,10 +95,53 @@ export const AppShell: React.FC = () => {
             </div>
         </div>
 
-        <nav className="flex-1 p-4 space-y-1">
+        <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
           <NavItem to="/dashboard" icon={LayoutDashboard}>{t('nav.dashboard')}</NavItem>
           <NavItem to="/channels" icon={MessageSquare}>{t('nav.channels')}</NavItem>
           <NavItem to="/doctor" icon={Activity}>{t('nav.doctor')}</NavItem>
+
+          {/* GitHub Repos Section */}
+          <div className="pt-4 mt-4 border-t border-border">
+            <button
+              onClick={() => setGithubExpanded(!githubExpanded)}
+              className="flex items-center justify-between w-full px-3 py-2 text-sm font-medium text-muted hover:text-text transition-colors"
+            >
+              <span className="flex items-center gap-2">
+                <Github className="w-4 h-4" />
+                {t('nav.githubRepos')}
+              </span>
+              {githubExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+            </button>
+            {githubExpanded && (
+              <div className="mt-1 space-y-0.5">
+                {!hasGitHubConfig ? (
+                  <NavLink
+                    to="/setup"
+                    className="flex items-center gap-2 px-3 py-1.5 pl-8 text-sm text-accent hover:bg-neutral-100 rounded-md transition-colors"
+                  >
+                    {t('nav.configureGitHub')}
+                  </NavLink>
+                ) : enabledRepos.length > 0 ? (
+                  enabledRepos.map((repo) => (
+                    <a
+                      key={repo.fullName}
+                      href={`https://github.com/${repo.fullName}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-2 px-3 py-1.5 pl-8 text-sm text-muted hover:text-text hover:bg-neutral-100 rounded-md transition-colors"
+                      title={repo.fullName}
+                    >
+                      <span className="truncate">{repo.name}</span>
+                    </a>
+                  ))
+                ) : (
+                  <div className="px-3 py-2 pl-8 text-xs text-muted">
+                    {t('nav.noEnabledRepos')}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </nav>
 
         <div className="p-4 border-t border-border space-y-3">

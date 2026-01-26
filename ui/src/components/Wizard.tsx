@@ -5,6 +5,7 @@ import { Welcome } from './steps/Welcome';
 import { ModeSelection } from './steps/ModeSelection';
 import { AgentDetection } from './steps/AgentDetection';
 import { SlackConfig } from './steps/SlackConfig';
+import { GitHubConfig } from './steps/GitHubConfig';
 import { ChannelList } from './steps/ChannelList';
 import { Summary } from './steps/Summary';
 import { useApi } from '../context/ApiContext';
@@ -63,6 +64,8 @@ const buildConfigPayload = (data: any) => ({
   },
   // Preserve existing update config entirely
   update: data.update,
+  // GitHub config (optional)
+  github: data.github || null,
   // Preserve ack_mode
   ack_mode: data.ack_mode,
 });
@@ -72,6 +75,7 @@ const steps = [
   { id: 'mode', title: 'Mode', component: ModeSelection },
   { id: 'agents', title: 'Agents', component: AgentDetection },
   { id: 'slack', title: 'Slack', component: SlackConfig },
+  { id: 'github', title: 'GitHub', component: GitHubConfig },
   { id: 'channels', title: 'Channels', component: ChannelList },
   { id: 'summary', title: 'Finish', component: Summary },
 ];

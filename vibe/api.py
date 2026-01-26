@@ -14,6 +14,8 @@ from config.v2_settings import (
     SettingsStore,
     ChannelSettings,
     RoutingSettings,
+    GitHubRepoSettings,
+    GitHubInstallationSettings,
     normalize_show_message_types,
 )
 from config.v2_sessions import SessionsStore
@@ -59,6 +61,7 @@ def config_to_payload(config: V2Config) -> dict:
         "gateway": config.gateway.__dict__ if config.gateway else None,
         "ui": config.ui.__dict__,
         "update": config.update.__dict__,
+        "github": config.github.__dict__ if config.github else None,
         "ack_mode": config.ack_mode,
     }
     return payload
@@ -242,7 +245,7 @@ async def opencode_options_async(cwd: str) -> dict:
 
 
 def _settings_to_payload(store: SettingsStore) -> dict:
-    payload = {"channels": {}}
+    payload = {"channels": {}, "github": {"installations": {}}}
     for channel_id, settings in store.settings.channels.items():
         payload["channels"][channel_id] = {
             "enabled": settings.enabled,
@@ -257,6 +260,21 @@ def _settings_to_payload(store: SettingsStore) -> dict:
                 "opencode_model": settings.routing.opencode_model,
                 "opencode_reasoning_effort": settings.routing.opencode_reasoning_effort,
             },
+        }
+    # Include GitHub settings
+    for inst_id, inst in store.settings.github.installations.items():
+        repos_payload = {}
+        for repo_name, repo in inst.repos.items():
+            repos_payload[repo_name] = {
+                "enabled": repo.enabled,
+                "agent": repo.agent,
+                "cwd": repo.cwd,
+                "allowed_users": repo.allowed_users,
+            }
+        payload["github"]["installations"][inst_id] = {
+            "account": inst.account,
+            "account_type": inst.account_type,
+            "repos": repos_payload,
         }
     return payload
 
@@ -406,3 +424,328 @@ def do_upgrade(auto_restart: bool = True) -> dict:
         return {"ok": False, "message": "Upgrade timed out", "output": None, "restarting": False}
     except Exception as e:
         return {"ok": False, "message": str(e), "output": None, "restarting": False}
+
+
+# =============================================================================
+# GitHub Integration API
+# =============================================================================
+
+
+def get_github_install_url() -> dict:
+    """Get GitHub App installation URL.
+
+    Returns:
+        {"ok": True, "url": str} on success
+        {"ok": False, "error": str} on failure
+    """
+    try:
+        config = V2Config.load()
+        if not config.github:
+            return {"ok": False, "error": "GitHub not configured"}
+
+        # Construct installation URL
+        # Format: https://github.com/apps/{app-name}/installations/new
+        # We need the app slug, which can be derived from app_id or configured separately
+        # For now, we'll use a generic approach
+        app_id = config.github.app_id
+        if not app_id:
+            return {"ok": False, "error": "GitHub App ID not configured"}
+
+        # The actual app name/slug needs to be known
+        # Typically this would be configured or fetched from the API
+        # For now, return a message asking user to configure
+        return {
+            "ok": True,
+            "app_id": app_id,
+            "message": "Use the GitHub App installation page to install the app",
+        }
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+async def github_oauth_callback_async(code: str, installation_id: str) -> dict:
+    """Handle GitHub OAuth callback.
+
+    Args:
+        code: OAuth authorization code
+        installation_id: GitHub App installation ID
+
+    Returns:
+        {"ok": True, "installation": dict} on success
+        {"ok": False, "error": str} on failure
+    """
+    try:
+        import httpx
+
+        config = V2Config.load()
+        if not config.github:
+            return {"ok": False, "error": "GitHub not configured"}
+
+        # Exchange code for access token (optional, for user context)
+        # For GitHub App, we primarily use installation tokens
+        # This step is mainly to verify the OAuth flow completed
+
+        # Get installation info
+        from modules.im.github.app import GitHubAppAuth
+
+        app_auth = GitHubAppAuth(
+            app_id=config.github.app_id,
+            private_key=config.github.private_key,
+        )
+
+        # Get installation details
+        token = await app_auth.get_installation_token(installation_id)
+        repos = await app_auth.get_installation_repos(installation_id)
+
+        # Get account info from first repo or installation API
+        account_name = ""
+        account_type = "User"
+        if repos:
+            owner = repos[0].get("owner", {})
+            account_name = owner.get("login", "")
+            account_type = owner.get("type", "User")
+
+        # Update settings with installation info
+        store = SettingsStore()
+        installation_settings = GitHubInstallationSettings(
+            account=account_name,
+            account_type=account_type,
+            repos={},
+        )
+
+        # Add repos with default settings
+        for repo in repos:
+            repo_full_name = repo.get("full_name", "")
+            if repo_full_name:
+                installation_settings.repos[repo_full_name] = GitHubRepoSettings(
+                    enabled=False,  # Disabled by default until user enables
+                    agent=config.github.default_agent,
+                )
+
+        store.update_github_installation(installation_id, installation_settings)
+
+        return {
+            "ok": True,
+            "installation": {
+                "id": installation_id,
+                "account": account_name,
+                "account_type": account_type,
+                "repos": [
+                    {
+                        "full_name": repo.get("full_name"),
+                        "name": repo.get("name"),
+                        "private": repo.get("private", False),
+                    }
+                    for repo in repos
+                ],
+            },
+        }
+    except Exception as e:
+        logger.error(f"GitHub OAuth callback failed: {e}")
+        return {"ok": False, "error": str(e)}
+
+
+def github_oauth_callback(code: str, installation_id: str) -> dict:
+    """Sync wrapper for github_oauth_callback_async."""
+    return asyncio.run(github_oauth_callback_async(code, installation_id))
+
+
+async def get_github_repos_async() -> dict:
+    """Get all GitHub repos from all installations.
+
+    Fetches installations from GitHub API and merges with local settings.
+
+    Returns:
+        {"ok": True, "installations": list} on success
+        {"ok": False, "error": str} on failure
+    """
+    try:
+        config = V2Config.load()
+        if not config.github or not config.github.is_configured():
+            return {"ok": False, "error": "GitHub not configured"}
+
+        from modules.im.github.app import GitHubAppAuth
+
+        app_auth = GitHubAppAuth(
+            app_id=config.github.app_id,
+            private_key=config.github.private_key,
+        )
+
+        # Fetch all installations from GitHub API
+        gh_installations = await app_auth.get_installations()
+        logger.info(f"Found {len(gh_installations)} GitHub installations")
+
+        store = SettingsStore()
+        installations = []
+
+        for gh_inst in gh_installations:
+            inst_id = str(gh_inst.get("id", ""))
+            account_name = gh_inst.get("account", {}).get("login", "")
+            account_type = gh_inst.get("account", {}).get("type", "User")
+
+            # Fetch repos for this installation
+            try:
+                gh_repos = await app_auth.get_installation_repos(inst_id)
+            except Exception as e:
+                logger.warning(f"Failed to fetch repos for installation {inst_id}: {e}")
+                gh_repos = []
+
+            # Get local settings for this installation
+            local_inst = store.settings.github.installations.get(inst_id)
+            if not local_inst:
+                local_inst = GitHubInstallationSettings(
+                    account=account_name,
+                    account_type=account_type,
+                    repos={},
+                )
+
+            # Merge GitHub repos with local settings
+            repos = []
+            for gh_repo in gh_repos:
+                repo_full_name = gh_repo.get("full_name", "")
+                local_repo = local_inst.repos.get(repo_full_name)
+                if local_repo:
+                    repos.append({
+                        "full_name": repo_full_name,
+                        "enabled": local_repo.enabled,
+                        "agent": local_repo.agent,
+                        "cwd": local_repo.cwd,
+                        "allowed_users": local_repo.allowed_users,
+                    })
+                else:
+                    # New repo - add to local settings with default values
+                    new_repo_settings = GitHubRepoSettings(
+                        enabled=False,
+                        agent=config.github.default_agent,
+                    )
+                    local_inst.repos[repo_full_name] = new_repo_settings
+                    repos.append({
+                        "full_name": repo_full_name,
+                        "enabled": False,
+                        "agent": config.github.default_agent,
+                        "cwd": None,
+                        "allowed_users": [],
+                    })
+
+            # Update local installation settings
+            local_inst.account = account_name
+            local_inst.account_type = account_type
+            store.update_github_installation(inst_id, local_inst)
+
+            installations.append({
+                "id": inst_id,
+                "account": account_name,
+                "account_type": account_type,
+                "repos": repos,
+            })
+
+        return {"ok": True, "installations": installations}
+    except Exception as e:
+        logger.error(f"Failed to get GitHub repos: {e}")
+        return {"ok": False, "error": str(e)}
+
+
+def get_github_repos() -> dict:
+    """Sync wrapper for get_github_repos_async."""
+    return asyncio.run(get_github_repos_async())
+
+
+def update_github_repo(installation_id: str, repo: str, settings: dict) -> dict:
+    """Update settings for a GitHub repo.
+
+    Args:
+        installation_id: GitHub App installation ID
+        repo: Repository full name (owner/repo)
+        settings: Settings dict with enabled, agent, cwd, allowed_users
+
+    Returns:
+        {"ok": True} on success
+        {"ok": False, "error": str} on failure
+    """
+    try:
+        store = SettingsStore()
+        repo_settings = GitHubRepoSettings(
+            enabled=settings.get("enabled", True),
+            agent=settings.get("agent", "claude"),
+            cwd=settings.get("cwd"),
+            allowed_users=settings.get("allowed_users", []),
+        )
+        store.update_github_repo(installation_id, repo, repo_settings)
+        return {"ok": True}
+    except Exception as e:
+        logger.error(f"Failed to update GitHub repo: {e}")
+        return {"ok": False, "error": str(e)}
+
+
+async def refresh_github_repos_async(installation_id: str) -> dict:
+    """Refresh repos for a GitHub installation from GitHub API.
+
+    Args:
+        installation_id: GitHub App installation ID
+
+    Returns:
+        {"ok": True, "repos": list} on success
+        {"ok": False, "error": str} on failure
+    """
+    try:
+        config = V2Config.load()
+        if not config.github or not config.github.is_configured():
+            return {"ok": False, "error": "GitHub not configured"}
+
+        from modules.im.github.app import GitHubAppAuth
+
+        app_auth = GitHubAppAuth(
+            app_id=config.github.app_id,
+            private_key=config.github.private_key,
+        )
+
+        repos = await app_auth.get_installation_repos(installation_id)
+
+        # Update settings with new repos (preserve existing settings)
+        store = SettingsStore()
+        inst = store.settings.github.installations.get(installation_id)
+
+        if not inst:
+            # Get account info from first repo
+            account_name = ""
+            account_type = "User"
+            if repos:
+                owner = repos[0].get("owner", {})
+                account_name = owner.get("login", "")
+                account_type = owner.get("type", "User")
+            inst = GitHubInstallationSettings(
+                account=account_name,
+                account_type=account_type,
+                repos={},
+            )
+
+        # Add new repos, preserve existing settings
+        for repo in repos:
+            repo_full_name = repo.get("full_name", "")
+            if repo_full_name and repo_full_name not in inst.repos:
+                inst.repos[repo_full_name] = GitHubRepoSettings(
+                    enabled=False,
+                    agent=config.github.default_agent,
+                )
+
+        store.update_github_installation(installation_id, inst)
+
+        return {
+            "ok": True,
+            "repos": [
+                {
+                    "full_name": repo.get("full_name"),
+                    "name": repo.get("name"),
+                    "private": repo.get("private", False),
+                }
+                for repo in repos
+            ],
+        }
+    except Exception as e:
+        logger.error(f"Failed to refresh GitHub repos: {e}")
+        return {"ok": False, "error": str(e)}
+
+
+def refresh_github_repos(installation_id: str) -> dict:
+    """Sync wrapper for refresh_github_repos_async."""
+    return asyncio.run(refresh_github_repos_async(installation_id))

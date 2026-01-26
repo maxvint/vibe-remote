@@ -39,7 +39,10 @@
   "nav": {
     "dashboard": "Dashboard",
     "channels": "Channels",
-    "doctor": "Doctor"
+    "doctor": "Doctor",
+    "githubRepos": "GitHub Repos",
+    "noEnabledRepos": "No repos enabled",
+    "configureGitHub": "Configure GitHub..."
   },
   "appShell": {
     "title": "Vibe Remote"
@@ -108,6 +111,37 @@
     "step4Item2": "Type /invite @Vibe Remote",
     "step4Item3": "The bot will now receive messages from this channel",
     "step4Tip": "You can also right-click a channel and select 'Add apps'."
+  },
+  "githubConfig": {
+    "title": "GitHub Integration",
+    "description": "Configure GitHub Issue trigger to interact with AI agents via @mentions.",
+    "skipGitHub": "Skip GitHub Integration",
+    "skipGitHubHint": "You can configure this later from the dashboard.",
+    "step1Title": "Create GitHub App",
+    "step1Description": "Create a GitHub App to receive webhook events and post comments.",
+    "createGitHubApp": "Create GitHub App",
+    "requiredPermissions": "Required Permissions",
+    "appId": "App ID",
+    "privateKey": "Private Key (PEM)",
+    "privateKeyHint": "Download the private key from your GitHub App settings and paste the contents here.",
+    "webhookSecret": "Webhook Secret",
+    "step2Title": "Configure Cloudflare Worker",
+    "step2Description": "Set up the webhook receiver URL and API token for event polling.",
+    "workerUrl": "Worker URL",
+    "workerToken": "Worker API Token",
+    "workerTokenHint": "The Bearer token configured in your Cloudflare Worker for API authentication.",
+    "step3Title": "Trigger Settings",
+    "triggerKeyword": "Trigger Keyword",
+    "triggerKeywordHint": "The bot will respond when this keyword is mentioned in issue comments.",
+    "defaultAgent": "Default Agent",
+    "step4Title": "Manage Repositories",
+    "step4Description": "After installing the GitHub App, configure which repositories are enabled.",
+    "refreshRepos": "Refresh Repositories",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "noRepos": "No repositories found. Install the GitHub App first.",
+    "note": "Note",
+    "step4Note": "You need to install the GitHub App on your repositories first, then click Refresh to see them here."
   },
   "agentDetection": {
     "title": "Agent Configuration",
@@ -213,7 +247,16 @@
     "updateHint": "Update from {{from}} to {{to}}",
     "restarting": "Restarting...",
     "autoUpdate": "Auto Update",
-    "autoUpdateHint": "Auto-install when idle"
+    "autoUpdateHint": "Auto-install when idle",
+    "githubIntegration": "GitHub Integration",
+    "githubAppId": "App ID",
+    "githubTriggerKeyword": "Trigger Keyword",
+    "githubDefaultAgent": "Default Agent",
+    "githubWorkerUrl": "Worker URL",
+    "githubRepos": "Repositories",
+    "githubNoRepos": "No repositories found. Install the GitHub App on your repositories first.",
+    "githubNotConfigured": "GitHub integration is not configured yet.",
+    "githubConfigure": "Configure GitHub"
   },
   "doctor": {
     "title": "System Status",

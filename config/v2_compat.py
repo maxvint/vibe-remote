@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Optional
 
-from config.v2_config import V2Config, SlackConfig
+from config.v2_config import V2Config, SlackConfig, GitHubConfig
 
 
 @dataclass
@@ -39,6 +39,7 @@ class AppCompatConfig:
     opencode: Optional[OpenCodeCompatConfig]
     log_level: str
     ack_mode: str
+    github: Optional[GitHubConfig] = None
 
 
 def to_app_config(v2: V2Config) -> AppCompatConfig:
@@ -63,6 +64,11 @@ def to_app_config(v2: V2Config) -> AppCompatConfig:
             error_retry_limit=v2.agents.opencode.error_retry_limit,
         )
     slack = SlackConfig(**v2.slack.__dict__)
+
+    # Always use Slack as primary platform
+    # GitHub is handled separately as an additional consumer
+    github = v2.github if v2.github and v2.github.is_configured() else None
+
     return AppCompatConfig(
         platform="slack",
         slack=slack,
@@ -71,4 +77,5 @@ def to_app_config(v2: V2Config) -> AppCompatConfig:
         opencode=opencode,
         log_level=v2.runtime.log_level,
         ack_mode=v2.ack_mode,
+        github=github,
     )

@@ -1,12 +1,15 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useStatus } from '../context/StatusContext';
-import { Play, Square, RotateCw, Activity, Terminal, CheckCircle, MessageSquare, Server, Settings, Info } from 'lucide-react';
+import { Play, Square, RotateCw, Activity, Terminal, CheckCircle, MessageSquare, Server, Settings, Info, Github, RefreshCw } from 'lucide-react';
+import { useApi } from '../context/ApiContext';
 import { Link } from 'react-router-dom';
 
 export const Dashboard: React.FC = () => {
     const { t } = useTranslation();
     const { status, control } = useStatus();
+    const api = useApi();
+    const { githubInstallations, githubLoading, loadGithubInstallations, updateLocalGithubRepo } = api;
     const [loading, setLoading] = React.useState(false);
     const [config, setConfig] = React.useState<any>({});
     const [doctor, setDoctor] = React.useState<any>(null);
@@ -110,6 +113,10 @@ export const Dashboard: React.FC = () => {
                 if (res.ok) {
                     const nextConfig = await res.json();
                     setConfig(nextConfig);
+                    // Load GitHub repos if configured
+                    if (nextConfig.github?.app_id && nextConfig.github?.worker_url) {
+                        loadGithubInstallations();
+                    }
                 }
                 const doctorRes = await fetch('/doctor', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
                 if (doctorRes.ok) {
@@ -120,7 +127,7 @@ export const Dashboard: React.FC = () => {
             }
         };
         load();
-    }, []);
+    }, [loadGithubInstallations]);
 
     React.useEffect(() => {
         if (!settingsMessage) return;
@@ -462,6 +469,96 @@ export const Dashboard: React.FC = () => {
                         <RotateCw size={12} /> {diagnosticsSaving ? t('common.saving') : t('common.saveAndRestart')}
                     </button>
                 </div>
+            </div>
+
+            {/* GitHub Integration Card */}
+            <div className="bg-panel rounded-xl border border-border p-6 shadow-sm md:col-span-2">
+                <div className="flex items-center justify-between mb-4">
+                    <h3 className="font-semibold flex items-center gap-2 text-text"><Github size={18} /> {t('dashboard.githubIntegration')}</h3>
+                    <div className="flex items-center gap-2">
+                        {config.github?.app_id && (
+                            <button
+                                onClick={loadGithubInstallations}
+                                disabled={githubLoading}
+                                className="text-sm text-accent hover:underline font-medium flex items-center gap-1"
+                            >
+                                <RefreshCw size={14} className={githubLoading ? 'animate-spin' : ''} />
+                                {t('common.refresh')}
+                            </button>
+                        )}
+                        <Link to="/setup" className="text-sm text-accent hover:underline font-medium">{t('common.editSetup')}</Link>
+                    </div>
+                </div>
+                {config.github?.app_id ? (
+                    <div className="space-y-4">
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                            <div>
+                                <span className="text-muted block mb-1">{t('dashboard.githubAppId')}</span>
+                                <span className="font-mono text-xs text-text">{config.github.app_id}</span>
+                            </div>
+                            <div>
+                                <span className="text-muted block mb-1">{t('dashboard.githubTriggerKeyword')}</span>
+                                <span className="font-mono text-xs text-text">{config.github.trigger_keyword || '@Codeholic'}</span>
+                            </div>
+                            <div>
+                                <span className="text-muted block mb-1">{t('dashboard.githubDefaultAgent')}</span>
+                                <span className="font-mono text-xs text-text capitalize">{config.github.default_agent || 'claude'}</span>
+                            </div>
+                            <div>
+                                <span className="text-muted block mb-1">{t('dashboard.githubWorkerUrl')}</span>
+                                <span className="font-mono text-xs text-text truncate block" title={config.github.worker_url}>
+                                    {config.github.worker_url ? new URL(config.github.worker_url).hostname : '-'}
+                                </span>
+                            </div>
+                        </div>
+                        {githubInstallations.length > 0 ? (
+                            <div className="border-t border-border pt-4">
+                                <h4 className="text-sm font-medium text-text mb-3">{t('dashboard.githubRepos')}</h4>
+                                <div className="space-y-2 max-h-48 overflow-y-auto">
+                                    {githubInstallations.map(inst => (
+                                        <div key={inst.id} className="space-y-1">
+                                            <div className="text-xs text-muted font-medium">{inst.account}</div>
+                                            {inst.repos.map(repo => (
+                                                <div key={repo.full_name} className="flex items-center justify-between pl-4 py-1">
+                                                    <span className="text-xs font-mono text-text">{repo.full_name}</span>
+                                                    <button
+                                                        onClick={async () => {
+                                                            const newEnabled = !repo.enabled;
+                                                            await api.githubUpdateRepo(inst.id, repo.full_name, { enabled: newEnabled });
+                                                            updateLocalGithubRepo(inst.id, repo.full_name, newEnabled);
+                                                        }}
+                                                        className={`px-2 py-0.5 rounded-full text-xs font-medium transition-colors ${
+                                                            repo.enabled
+                                                                ? 'bg-success/10 text-success border border-success/20'
+                                                                : 'bg-neutral-100 text-muted border border-border'
+                                                        }`}
+                                                    >
+                                                        {repo.enabled ? t('common.enabled') : t('common.disabled')}
+                                                    </button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="border-t border-border pt-4 text-center text-sm text-muted py-4">
+                                {githubLoading ? t('common.loading') : t('dashboard.githubNoRepos')}
+                            </div>
+                        )}
+                    </div>
+                ) : (
+                    <div className="text-center py-6">
+                        <p className="text-muted text-sm mb-4">{t('dashboard.githubNotConfigured')}</p>
+                        <Link
+                            to="/setup"
+                            className="inline-flex items-center gap-2 px-4 py-2 bg-accent text-white rounded-lg hover:bg-accent/90 transition-colors font-medium text-sm"
+                        >
+                            <Github size={16} />
+                            {t('dashboard.githubConfigure')}
+                        </Link>
+                    </div>
+                )}
             </div>
        </div>
 

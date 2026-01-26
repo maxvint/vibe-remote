@@ -170,3 +170,7 @@ sessions/
 *.bak
 *.swp
 *~
+
+webhook/node_modules/
+webhook/dist/
+webhook/.env.example

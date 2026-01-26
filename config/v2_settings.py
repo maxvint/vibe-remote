@@ -40,8 +40,32 @@ class ChannelSettings:
 
 
 @dataclass
+class GitHubRepoSettings:
+    """Per-repository settings for GitHub integration."""
+    enabled: bool = True
+    agent: str = "claude"  # Agent backend to use
+    cwd: Optional[str] = None  # Working directory (None = auto clone)
+    allowed_users: List[str] = field(default_factory=list)  # Empty = all users allowed
+
+
+@dataclass
+class GitHubInstallationSettings:
+    """Per-installation settings (GitHub App installation level)."""
+    account: str = ""  # GitHub account name (user or org)
+    account_type: str = "User"  # "User" or "Organization"
+    repos: Dict[str, GitHubRepoSettings] = field(default_factory=dict)
+
+
+@dataclass
+class GitHubSettings:
+    """GitHub integration settings."""
+    installations: Dict[str, GitHubInstallationSettings] = field(default_factory=dict)
+
+
+@dataclass
 class SettingsState:
     channels: Dict[str, ChannelSettings] = field(default_factory=dict)
+    github: GitHubSettings = field(default_factory=GitHubSettings)
 
 
 class SettingsStore:
@@ -85,11 +109,44 @@ class SettingsStore:
                 routing=routing,
                 require_mention=channel_payload.get("require_mention"),
             )
-        self.settings = SettingsState(channels=channels)
+        # Load GitHub settings
+        github = self._load_github_settings(payload.get("github"))
+        self.settings = SettingsState(channels=channels, github=github)
+
+    def _load_github_settings(self, raw_github: Optional[dict]) -> GitHubSettings:
+        """Load GitHub settings from raw payload."""
+        github = GitHubSettings()
+        if not raw_github or not isinstance(raw_github, dict):
+            return github
+
+        raw_installations = raw_github.get("installations")
+        if not raw_installations or not isinstance(raw_installations, dict):
+            return github
+
+        for installation_id, installation_payload in raw_installations.items():
+            if not isinstance(installation_payload, dict):
+                continue
+            repos = {}
+            raw_repos = installation_payload.get("repos") or {}
+            for repo_name, repo_payload in raw_repos.items():
+                if not isinstance(repo_payload, dict):
+                    continue
+                repos[repo_name] = GitHubRepoSettings(
+                    enabled=repo_payload.get("enabled", True),
+                    agent=repo_payload.get("agent", "claude"),
+                    cwd=repo_payload.get("cwd"),
+                    allowed_users=repo_payload.get("allowed_users") or [],
+                )
+            github.installations[installation_id] = GitHubInstallationSettings(
+                account=installation_payload.get("account", ""),
+                account_type=installation_payload.get("account_type", "User"),
+                repos=repos,
+            )
+        return github
 
     def save(self) -> None:
         paths.ensure_data_dirs()
-        payload = {"channels": {}}
+        payload = {"channels": {}, "github": {"installations": {}}}
         for channel_id, settings in self.settings.channels.items():
             payload["channels"][channel_id] = {
                 "enabled": settings.enabled,
@@ -103,6 +160,21 @@ class SettingsStore:
                 },
                 "require_mention": settings.require_mention,
             }
+        # Save GitHub settings
+        for inst_id, inst in self.settings.github.installations.items():
+            repos_payload = {}
+            for repo_name, repo in inst.repos.items():
+                repos_payload[repo_name] = {
+                    "enabled": repo.enabled,
+                    "agent": repo.agent,
+                    "cwd": repo.cwd,
+                    "allowed_users": repo.allowed_users,
+                }
+            payload["github"]["installations"][inst_id] = {
+                "account": inst.account,
+                "account_type": inst.account_type,
+                "repos": repos_payload,
+            }
         self.settings_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
     def get_channel(self, channel_id: str) -> ChannelSettings:
@@ -113,3 +185,37 @@ class SettingsStore:
     def update_channel(self, channel_id: str, settings: ChannelSettings) -> None:
         self.settings.channels[channel_id] = settings
         self.save()
+
+    # GitHub settings methods
+    def get_github_repo(self, installation_id: str, repo: str) -> Optional[GitHubRepoSettings]:
+        """Get settings for a specific GitHub repo."""
+        inst = self.settings.github.installations.get(installation_id)
+        if not inst:
+            return None
+        return inst.repos.get(repo)
+
+    def update_github_installation(
+        self, installation_id: str, settings: GitHubInstallationSettings
+    ) -> None:
+        """Update settings for a GitHub App installation."""
+        self.settings.github.installations[installation_id] = settings
+        self.save()
+
+    def update_github_repo(
+        self, installation_id: str, repo: str, settings: GitHubRepoSettings
+    ) -> None:
+        """Update settings for a specific GitHub repo."""
+        if installation_id not in self.settings.github.installations:
+            self.settings.github.installations[installation_id] = GitHubInstallationSettings()
+        self.settings.github.installations[installation_id].repos[repo] = settings
+        self.save()
+
+    def is_github_repo_enabled(self, installation_id: str, repo: str) -> bool:
+        """Check if a GitHub repo is enabled for bot integration."""
+        repo_settings = self.get_github_repo(installation_id, repo)
+        return repo_settings.enabled if repo_settings else False
+
+    def get_github_repo_agent(self, installation_id: str, repo: str) -> str:
+        """Get the agent backend for a GitHub repo."""
+        repo_settings = self.get_github_repo(installation_id, repo)
+        return repo_settings.agent if repo_settings else "claude"

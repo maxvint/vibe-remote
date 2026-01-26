@@ -327,6 +327,90 @@ def upgrade():
 
 
 # =============================================================================
+# GitHub Integration Endpoints
+# =============================================================================
+
+
+@app.route("/github/install")
+def github_install():
+    """Get GitHub App installation URL."""
+    from vibe import api
+
+    return jsonify(api.get_github_install_url())
+
+
+@app.route("/github/callback")
+def github_callback():
+    """Handle GitHub OAuth callback."""
+    from vibe import api
+
+    code = request.args.get("code", "")
+    installation_id = request.args.get("installation_id", "")
+    setup_action = request.args.get("setup_action", "")
+
+    if not installation_id:
+        return jsonify({"ok": False, "error": "Missing installation_id"}), 400
+
+    result = api.github_oauth_callback(code, installation_id)
+    if result.get("ok"):
+        # Redirect to UI with success
+        return f"""
+        <html>
+        <body>
+        <script>
+            window.opener && window.opener.postMessage({{
+                type: 'github-oauth-success',
+                installation_id: '{installation_id}'
+            }}, '*');
+            window.close();
+        </script>
+        <p>GitHub App installed successfully. You can close this window.</p>
+        </body>
+        </html>
+        """
+    else:
+        return jsonify(result), 400
+
+
+@app.route("/github/repos", methods=["GET"])
+def github_repos_get():
+    """Get all GitHub repos."""
+    from vibe import api
+
+    return jsonify(api.get_github_repos())
+
+
+@app.route("/github/repos", methods=["POST"])
+def github_repos_post():
+    """Update GitHub repo settings."""
+    from vibe import api
+
+    payload = request.json or {}
+    installation_id = payload.get("installation_id", "")
+    repo = payload.get("repo", "")
+    settings = payload.get("settings", {})
+
+    if not installation_id or not repo:
+        return jsonify({"ok": False, "error": "Missing installation_id or repo"}), 400
+
+    return jsonify(api.update_github_repo(installation_id, repo, settings))
+
+
+@app.route("/github/repos/refresh", methods=["POST"])
+def github_repos_refresh():
+    """Refresh GitHub repos from API."""
+    from vibe import api
+
+    payload = request.json or {}
+    installation_id = payload.get("installation_id", "")
+
+    if not installation_id:
+        return jsonify({"ok": False, "error": "Missing installation_id"}), 400
+
+    return jsonify(api.refresh_github_repos(installation_id))
+
+
+# =============================================================================
 # Static Files (SPA)
 # =============================================================================
 

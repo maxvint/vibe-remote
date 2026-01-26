@@ -35,6 +35,10 @@ dependencies = [
     "typing_extensions>=4.12.2",
     "PyYAML>=6.0",
     "flask>=3.0.0",
+    # GitHub integration dependencies
+    "httpx>=0.25.0",
+    "PyJWT>=2.8.0",
+    "cryptography>=41.0.0",  # Required for RS256 JWT signing
 ]
 
 [project.urls]
