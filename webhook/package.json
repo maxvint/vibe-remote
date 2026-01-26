@@ -4,7 +4,7 @@
   "description": "GitHub webhook server with Redis storage and direct push",
   "main": "dist/index.js",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
+    "dev": "bun --watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js"
   },
