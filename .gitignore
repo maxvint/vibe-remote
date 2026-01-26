@@ -174,3 +174,5 @@ sessions/
 webhook/node_modules/
 webhook/dist/
 webhook/.env.example
+
+config.json
