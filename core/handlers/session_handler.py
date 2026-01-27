@@ -202,6 +202,16 @@ class SessionHandler:
                     "Connection to Claude was lost. Please try your message again."
                 )
             )
+        elif "Cannot write to terminated process" in error_msg:
+            logger.error(f"Session {composite_key} process terminated - cleaning up")
+            await self.cleanup_session(composite_key)
+
+            await im_client.send_message(
+                context,
+                self.formatter.format_error(
+                    "Claude session terminated unexpectedly. Session has been reset. Please try again."
+                )
+            )
         else:
             # Generic error handling
             logger.error(f"Error in session {composite_key}: {error}")
