@@ -5,7 +5,7 @@ module.exports = {
     cwd: __dirname,
     instances: 1,
     autorestart: true,
-    port: 9123,
+    port: 9124,
     watch: false,
     max_memory_restart: '256M',
     env_file: '.env',
