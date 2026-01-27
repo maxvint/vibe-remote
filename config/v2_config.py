@@ -136,8 +136,16 @@ class GitHubConfig(BaseIMConfig):
         pass
 
     def is_configured(self) -> bool:
-        """Check if GitHub integration is configured."""
-        return bool(self.app_id and self.private_key and self.worker_url)
+        """Check if GitHub integration is configured.
+
+        Supports two modes:
+        - Polling mode: requires worker_url
+        - Push mode: requires push_token
+        """
+        if not (self.app_id and self.private_key):
+            return False
+        # Either polling mode (worker_url) or push mode (push_token) must be configured
+        return bool(self.worker_url or self.push_token)
 
 
 @dataclass

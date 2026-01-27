@@ -7,7 +7,6 @@ export function getRedis(): Redis {
   if (!redis) {
     redis = new Redis(config.redisUrl, {
       maxRetriesPerRequest: 3,
-      retryDelayOnFailover: 100,
     });
 
     redis.on('error', (err) => {
