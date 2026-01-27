@@ -488,10 +488,11 @@ class Controller:
         """Unified agent resolution with dynamic override support.
 
         Priority:
-        1. channel_routing.agent_backend (from settings.json)
-        2. GitHub default_agent (for GitHub platform)
-        3. AgentRouter platform default (configured in code)
-        4. AgentService.default_agent ("claude")
+        1. channel_routing.agent_backend (from settings.json channels)
+        2. GitHub per-repo agent (from settings.json github.installations.*.repos.*.agent)
+        3. GitHub default_agent (from config.json)
+        4. AgentRouter platform default (configured in code)
+        5. AgentService.default_agent ("claude")
         """
         settings_key = self._get_settings_key(context)
 
@@ -507,12 +508,27 @@ class Controller:
                     f"falling back to static routing"
                 )
 
-        # Check GitHub default_agent for GitHub platform
+        # Check GitHub per-repo agent setting
         is_github = context.platform_specific.get("platform") == "github" if context.platform_specific else False
-        if is_github and hasattr(self.config, 'github') and self.config.github:
-            github_default = getattr(self.config.github, 'default_agent', None)
-            if github_default and github_default in self.agent_service.agents:
-                return github_default
+        if is_github:
+            ps = context.platform_specific or {}
+            installation_id = ps.get("installation_id", "")
+            repo_full = ps.get("repo_full", "")
+            if installation_id and repo_full:
+                repo_agent = self.settings_manager.get_github_repo_agent(installation_id, repo_full)
+                if repo_agent and repo_agent in self.agent_service.agents:
+                    return repo_agent
+                elif repo_agent:
+                    logger.warning(
+                        f"GitHub repo '{repo_full}' specifies agent '{repo_agent}' but agent is not registered, "
+                        f"falling back to config default"
+                    )
+
+            # Fall back to GitHub default_agent from config
+            if hasattr(self.config, 'github') and self.config.github:
+                github_default = getattr(self.config.github, 'default_agent', None)
+                if github_default and github_default in self.agent_service.agents:
+                    return github_default
 
         # Fall back to static routing
         resolved = self.agent_router.resolve(self.config.platform, settings_key)

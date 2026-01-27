@@ -562,6 +562,22 @@ class SettingsManager:
             logger.info(f"Cleared channel routing for {settings_key}")
 
     # ---------------------------------------------
+    # GitHub repo agent management
+    # ---------------------------------------------
+    def get_github_repo_agent(self, installation_id: str, repo: str) -> str:
+        """Get the agent backend for a GitHub repo.
+
+        Args:
+            installation_id: GitHub App installation ID
+            repo: Repository name (e.g., "owner/repo")
+
+        Returns:
+            Agent backend name (e.g., "claude", "codex", "opencode")
+        """
+        self._reload_if_changed()
+        return self.store.get_github_repo_agent(installation_id, repo)
+
+    # ---------------------------------------------
     # Per-channel require_mention management
     # ---------------------------------------------
     def get_require_mention(
