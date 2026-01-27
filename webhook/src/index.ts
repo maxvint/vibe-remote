@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import Fastify from 'fastify';
 import { config, validateConfig } from './config.js';
 import { handleWebhook, verifySignature } from './webhook.js';
