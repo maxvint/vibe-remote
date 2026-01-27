@@ -175,14 +175,17 @@ class SessionHandler:
     async def handle_session_error(self, composite_key: str, context: MessageContext, error: Exception):
         """Handle session-related errors"""
         error_msg = str(error)
-        
+
+        # Get the appropriate IM client for this context (Slack or GitHub)
+        im_client = self.controller._get_im_client_for_context(context)
+
         # Check for specific error types
         if "read() called while another coroutine" in error_msg:
             logger.error(f"Session {composite_key} has concurrent read error - cleaning up")
             await self.cleanup_session(composite_key)
-            
+
             # Notify user and suggest retry
-            await self.im_client.send_message(
+            await im_client.send_message(
                 context,
                 self.formatter.format_error(
                     "Session error detected. Session has been reset. Please try your message again."
@@ -191,9 +194,9 @@ class SessionHandler:
         elif "Session is broken" in error_msg or "Connection closed" in error_msg or "Connection lost" in error_msg:
             logger.error(f"Session {composite_key} is broken - cleaning up")
             await self.cleanup_session(composite_key)
-            
+
             # Notify user
-            await self.im_client.send_message(
+            await im_client.send_message(
                 context,
                 self.formatter.format_error(
                     "Connection to Claude was lost. Please try your message again."
@@ -202,7 +205,7 @@ class SessionHandler:
         else:
             # Generic error handling
             logger.error(f"Error in session {composite_key}: {error}")
-            await self.im_client.send_message(
+            await im_client.send_message(
                 context,
                 self.formatter.format_error(f"An error occurred: {error_msg}")
             )
