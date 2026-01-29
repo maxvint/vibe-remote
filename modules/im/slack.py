@@ -311,6 +311,9 @@ class SlackBot(BaseIMClient):
                 # Skip bot messages and system messages
                 if msg.get("subtype") in ["bot_message", "channel_join", "channel_leave"]:
                     continue
+                # Skip messages from bots (have bot_id field)
+                if msg.get("bot_id"):
+                    continue
                 if not msg.get("text"):
                     continue
 
@@ -379,6 +382,9 @@ class SlackBot(BaseIMClient):
             for msg in response.get("messages", []):
                 # Skip bot messages and system messages
                 if msg.get("subtype") in ["bot_message", "channel_join", "channel_leave"]:
+                    continue
+                # Skip messages from bots (have bot_id field)
+                if msg.get("bot_id"):
                     continue
                 if not msg.get("text"):
                     continue
