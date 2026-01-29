@@ -79,7 +79,15 @@ class IssueHandler:
         if not self.config.github:
             return None
 
-        # Check repo-specific installation
+        # First, check settings.json for installation info
+        settings_manager = getattr(self.controller, "settings_manager", None)
+        if settings_manager and hasattr(settings_manager, "store"):
+            github_settings = settings_manager.store.settings.github
+            for inst_id, inst in github_settings.installations.items():
+                if repo in inst.repos:
+                    return str(inst_id)
+
+        # Fallback: check config.json repo_mappings
         repo_config = self.config.github.repo_mappings.get(repo, {})
         if isinstance(repo_config, dict):
             inst_id = repo_config.get("installation_id")
