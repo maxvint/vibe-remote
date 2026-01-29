@@ -371,3 +371,51 @@ class GitHubAPI:
             )
             response.raise_for_status()
             return response.json()
+
+    async def create_issue(
+        self,
+        installation_id: str,
+        owner: str,
+        repo: str,
+        title: str,
+        body: str,
+        labels: Optional[list[str]] = None,
+        assignees: Optional[list[str]] = None,
+    ) -> dict:
+        """Create a new issue in a repository.
+
+        Args:
+            installation_id: GitHub App installation ID
+            owner: Repository owner
+            repo: Repository name
+            title: Issue title
+            body: Issue body (markdown)
+            labels: Optional list of label names
+            assignees: Optional list of usernames to assign
+
+        Returns:
+            Created issue data including 'html_url', 'number', 'id'
+
+        Raises:
+            httpx.HTTPStatusError: If request fails
+        """
+        token = await self.app_auth.get_installation_token(installation_id)
+        url = f"{self.BASE_URL}/repos/{owner}/{repo}/issues"
+
+        payload = {
+            "title": title,
+            "body": body,
+        }
+        if labels:
+            payload["labels"] = labels
+        if assignees:
+            payload["assignees"] = assignees
+
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                url,
+                headers=self._get_headers(token),
+                json=payload,
+            )
+            response.raise_for_status()
+            return response.json()

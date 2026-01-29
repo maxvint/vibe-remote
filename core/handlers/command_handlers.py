@@ -340,3 +340,19 @@ Use the buttons below to manage your {agent_display_name} sessions, or simply ty
                 context,  # Use original context
                 f"❌ Error sending stop command: {str(e)}",
             )
+
+    async def handle_issue(self, context: MessageContext, args: str = ""):
+        """Handle /issue command - extract requirements and create GitHub issue"""
+        try:
+            from .issue_handler import IssueHandler
+
+            issue_handler = IssueHandler(self.controller)
+            await issue_handler.handle_issue_command(context, args)
+
+        except Exception as e:
+            logger.error(f"Error handling issue command: {e}", exc_info=True)
+            channel_context = self._get_channel_context(context)
+            await self.im_client.send_message(
+                channel_context,
+                f"❌ Error: {str(e)}",
+            )

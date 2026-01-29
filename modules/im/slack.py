@@ -278,6 +278,79 @@ class SlackBot(BaseIMClient):
             logger.debug(f"Failed to remove Slack reaction: {err}")
             return False
 
+    async def get_channel_history(
+        self,
+        channel_id: str,
+        hours: int = 24,
+        limit: int = 100,
+    ) -> list[dict]:
+        """Get channel message history.
+
+        Args:
+            channel_id: Channel ID to fetch history from
+            hours: Number of hours to look back (default 24)
+            limit: Maximum number of messages to return (default 100)
+
+        Returns:
+            List of message dicts with 'user', 'text', 'ts' fields
+        """
+        self._ensure_clients()
+        try:
+            import time as time_module
+
+            oldest = time_module.time() - (hours * 3600)
+
+            response = await self.web_client.conversations_history(
+                channel=channel_id,
+                oldest=str(oldest),
+                limit=limit,
+            )
+
+            messages = []
+            for msg in response.get("messages", []):
+                # Skip bot messages and system messages
+                if msg.get("subtype") in ["bot_message", "channel_join", "channel_leave"]:
+                    continue
+                if not msg.get("text"):
+                    continue
+
+                messages.append({
+                    "user": msg.get("user", "unknown"),
+                    "text": msg.get("text", ""),
+                    "ts": msg.get("ts", ""),
+                })
+
+            # Messages are returned newest first, reverse to chronological order
+            messages.reverse()
+            return messages
+
+        except SlackApiError as e:
+            logger.error(f"Error fetching channel history: {e}")
+            raise
+
+    async def get_user_display_name(self, user_id: str) -> str:
+        """Get user display name from user ID.
+
+        Args:
+            user_id: Slack user ID
+
+        Returns:
+            User display name or user_id if lookup fails
+        """
+        self._ensure_clients()
+        try:
+            response = await self.web_client.users_info(user=user_id)
+            user = response.get("user", {})
+            return (
+                user.get("profile", {}).get("display_name")
+                or user.get("real_name")
+                or user.get("name")
+                or user_id
+            )
+        except SlackApiError as e:
+            logger.debug(f"Error fetching user info: {e}")
+            return user_id
+
     async def send_message_with_buttons(
         self,
         context: MessageContext,
@@ -988,6 +1061,16 @@ class SlackBot(BaseIMClient):
                 await self._on_routing_update(
                     user_id, channel_id, backend, oc_agent, oc_model, oc_reasoning, require_mention
                 )
+
+        elif callback_id.startswith("issue_edit_submit:"):
+            # Handle issue edit modal submission
+            draft_id = callback_id.replace("issue_edit_submit:", "")
+            user_id = payload.get("user", {}).get("id")
+            values = view.get("state", {}).get("values", {})
+            channel_id = view.get("private_metadata") or ""
+
+            if hasattr(self, "_on_issue_edit") and self._on_issue_edit:
+                await self._on_issue_edit(user_id, channel_id, draft_id, values)
 
     def run(self):
         """Run the Slack bot"""
@@ -2074,6 +2157,10 @@ class SlackBot(BaseIMClient):
         # Register routing modal update handler
         if "on_routing_modal_update" in kwargs:
             self._on_routing_modal_update = kwargs["on_routing_modal_update"]
+
+        # Register issue edit handler
+        if "on_issue_edit" in kwargs:
+            self._on_issue_edit = kwargs["on_issue_edit"]
 
         # Register on_ready handler (called when connected)
         if "on_ready" in kwargs:

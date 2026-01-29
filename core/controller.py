@@ -241,6 +241,7 @@ class Controller:
             "set_cwd": self.command_handler.handle_set_cwd,
             "settings": self.settings_handler.handle_settings,
             "stop": self.command_handler.handle_stop,
+            "issue": self.command_handler.handle_issue,
         }
 
         # Register callbacks with the IM client
@@ -252,6 +253,7 @@ class Controller:
             on_change_cwd=self.handle_change_cwd_submission,
             on_routing_update=self.handle_routing_update,
             on_routing_modal_update=self.handle_routing_modal_update,
+            on_issue_edit=self.handle_issue_edit_submission,
             on_ready=self._on_im_ready,
         )
 
@@ -841,6 +843,37 @@ class Controller:
             )
             await self.im_client.send_message(
                 context, f"❌ Failed to change working directory: {str(e)}"
+            )
+
+    async def handle_issue_edit_submission(
+        self,
+        user_id: str,
+        channel_id: str,
+        draft_id: str,
+        values: dict,
+    ):
+        """Handle issue edit modal submission."""
+        try:
+            from core.handlers.issue_handler import IssueHandler
+
+            context = MessageContext(
+                user_id=user_id,
+                channel_id=channel_id,
+                platform_specific={},
+            )
+
+            issue_handler = IssueHandler(self)
+            await issue_handler.handle_edit_submit(draft_id, values, context)
+
+        except Exception as e:
+            logger.error(f"Error handling issue edit submission: {e}", exc_info=True)
+            context = MessageContext(
+                user_id=user_id,
+                channel_id=channel_id,
+                platform_specific={},
+            )
+            await self.im_client.send_message(
+                context, f"❌ Failed to update issue: {str(e)}"
             )
 
     async def handle_routing_modal_update(

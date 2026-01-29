@@ -398,6 +398,24 @@ class MessageHandler:
                 )
                 await self.controller.agent_service.handle_message("opencode", request)
 
+            elif callback_data.startswith("issue_"):
+                # Handle issue-related callbacks
+                from .issue_handler import IssueHandler
+
+                issue_handler = IssueHandler(self.controller)
+
+                if callback_data.startswith("issue_confirm:"):
+                    draft_id = callback_data.replace("issue_confirm:", "")
+                    await issue_handler.handle_confirm(context, draft_id)
+                elif callback_data.startswith("issue_edit:"):
+                    draft_id = callback_data.replace("issue_edit:", "")
+                    await issue_handler.handle_edit(context, draft_id)
+                elif callback_data.startswith("issue_cancel:"):
+                    draft_id = callback_data.replace("issue_cancel:", "")
+                    await issue_handler.handle_cancel(context, draft_id)
+                else:
+                    logger.warning(f"Unknown issue callback: {callback_data}")
+
             else:
                 logger.warning(f"Unknown callback data: {callback_data}")
                 await self.im_client.send_message(

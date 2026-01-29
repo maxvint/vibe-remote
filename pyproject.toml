@@ -39,6 +39,8 @@ dependencies = [
     "httpx>=0.25.0",
     "PyJWT>=2.8.0",
     "cryptography>=41.0.0",  # Required for RS256 JWT signing
+    # Issue extraction dependencies
+    "anthropic>=0.40.0",
 ]
 
 [project.urls]
