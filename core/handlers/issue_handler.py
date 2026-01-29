@@ -175,7 +175,7 @@ class IssueHandler:
                     if is_thread
                     else "❌ No messages found in the specified time range."
                 )
-                await self.im_client.update_message(
+                await self.im_client.edit_message(
                     context.channel_id,
                     status_msg_id,
                     error_msg,
@@ -183,7 +183,7 @@ class IssueHandler:
                 return
 
             # Update status
-            await self.im_client.update_message(
+            await self.im_client.edit_message(
                 context.channel_id,
                 status_msg_id,
                 f"🤖 Analyzing {len(messages)} messages with AI...",
@@ -196,7 +196,7 @@ class IssueHandler:
             extracted = await self._extract_requirements(formatted_messages)
 
             if not extracted:
-                await self.im_client.update_message(
+                await self.im_client.edit_message(
                     context.channel_id,
                     status_msg_id,
                     "❌ Failed to extract requirements from the discussion.",
@@ -228,7 +228,7 @@ class IssueHandler:
         except Exception as e:
             logger.error(f"Error in issue extraction: {e}", exc_info=True)
             try:
-                await self.im_client.update_message(
+                await self.im_client.edit_message(
                     context.channel_id,
                     status_msg_id,
                     f"❌ Error: {str(e)}",
