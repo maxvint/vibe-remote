@@ -351,6 +351,50 @@ class SlackBot(BaseIMClient):
             logger.debug(f"Error fetching user info: {e}")
             return user_id
 
+    async def get_thread_replies(
+        self,
+        channel_id: str,
+        thread_ts: str,
+        limit: int = 200,
+    ) -> list[dict]:
+        """Get all replies in a thread.
+
+        Args:
+            channel_id: Channel ID containing the thread
+            thread_ts: Thread timestamp (parent message ts)
+            limit: Maximum number of messages to return (default 200)
+
+        Returns:
+            List of message dicts with 'user', 'text', 'ts' fields
+        """
+        self._ensure_clients()
+        try:
+            response = await self.web_client.conversations_replies(
+                channel=channel_id,
+                ts=thread_ts,
+                limit=limit,
+            )
+
+            messages = []
+            for msg in response.get("messages", []):
+                # Skip bot messages and system messages
+                if msg.get("subtype") in ["bot_message", "channel_join", "channel_leave"]:
+                    continue
+                if not msg.get("text"):
+                    continue
+
+                messages.append({
+                    "user": msg.get("user", "unknown"),
+                    "text": msg.get("text", ""),
+                    "ts": msg.get("ts", ""),
+                })
+
+            return messages
+
+        except SlackApiError as e:
+            logger.error(f"Error fetching thread replies: {e}")
+            raise
+
     async def send_message_with_buttons(
         self,
         context: MessageContext,

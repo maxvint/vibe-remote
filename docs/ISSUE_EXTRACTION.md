@@ -69,6 +69,16 @@ This will:
 2. Analyze and extract requirements
 3. Show a preview with buttons
 
+### In a Thread
+
+When used inside a thread, `/issue` automatically collects **only the thread messages** (no time range needed):
+
+```
+/issue
+```
+
+This is useful for focused discussions where a thread contains all the relevant context.
+
 ### With Options
 
 ```

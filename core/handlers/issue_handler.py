@@ -102,6 +102,9 @@ class IssueHandler:
         """
         channel_context = self._get_channel_context(context)
 
+        # Check if we're in a thread
+        is_thread = bool(context.thread_id)
+
         # Parse arguments
         hours = 24
         repo = self._get_default_repo()
@@ -138,25 +141,44 @@ class IssueHandler:
             )
             return
 
-        # Send initial status
-        status_msg_id = await self.im_client.send_message(
-            channel_context,
-            f"📝 Collecting messages from the last {hours} hours...",
-        )
-
-        try:
-            # Collect channel history
-            messages = await self.im_client.get_channel_history(
-                context.channel_id,
-                hours=hours,
-                limit=100,
+        # Send initial status based on context
+        if is_thread:
+            status_msg_id = await self.im_client.send_message(
+                channel_context,
+                "📝 Collecting messages from this thread...",
+            )
+        else:
+            status_msg_id = await self.im_client.send_message(
+                channel_context,
+                f"📝 Collecting messages from the last {hours} hours...",
             )
 
+        try:
+            # Collect messages based on context
+            if is_thread:
+                # In a thread: collect all thread replies
+                messages = await self.im_client.get_thread_replies(
+                    context.channel_id,
+                    context.thread_id,
+                )
+            else:
+                # In channel: collect recent channel history
+                messages = await self.im_client.get_channel_history(
+                    context.channel_id,
+                    hours=hours,
+                    limit=100,
+                )
+
             if not messages:
+                error_msg = (
+                    "❌ No messages found in this thread."
+                    if is_thread
+                    else "❌ No messages found in the specified time range."
+                )
                 await self.im_client.update_message(
                     context.channel_id,
                     status_msg_id,
-                    "❌ No messages found in the specified time range.",
+                    error_msg,
                 )
                 return
 
