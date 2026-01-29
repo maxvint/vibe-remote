@@ -1,6 +1,8 @@
 # Issue Extraction Feature
 
-The `/issue` command allows you to extract requirements from Slack channel discussions and automatically create GitHub issues.
+The `/req` command allows you to extract requirements from Slack channel discussions and automatically create GitHub issues.
+
+> **Alias:** `/issue` also works but may conflict with GitHub's built-in command.
 
 ## Overview
 
@@ -61,7 +63,7 @@ Your Slack bot needs these additional scopes:
 In any Slack channel, type:
 
 ```
-/issue
+@Vibe Remote /req
 ```
 
 This will:
@@ -71,10 +73,10 @@ This will:
 
 ### In a Thread
 
-When used inside a thread, `/issue` automatically collects **only the thread messages** (no time range needed):
+When used inside a thread, `/req` automatically collects **only the thread messages** (no time range needed):
 
 ```
-/issue
+@Vibe Remote /req
 ```
 
 This is useful for focused discussions where a thread contains all the relevant context.
@@ -82,7 +84,7 @@ This is useful for focused discussions where a thread contains all the relevant 
 ### With Options
 
 ```
-/issue --hours 48 --repo owner/repo
+@Vibe Remote /req --hours 48 --repo owner/repo
 ```
 
 Options:
@@ -155,7 +157,7 @@ If you have the GitHub integration set up, this mention can trigger another agen
    Alice: We should investigate the API response times
    ```
 
-2. **Someone runs `/issue`**
+2. **Someone runs `@Vibe Remote /req`**
 
 3. **AI extracts:**
    ```

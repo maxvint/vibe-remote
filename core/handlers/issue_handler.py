@@ -1,4 +1,4 @@
-"""Issue extraction handler for /issue command.
+"""Issue extraction handler for /req command.
 
 Collects Slack channel discussions, extracts requirements using Claude,
 and creates GitHub issues with confirmation flow.
@@ -32,7 +32,7 @@ class IssueDraft:
 
 
 class IssueHandler:
-    """Handles /issue command and related callbacks."""
+    """Handles /req command and related callbacks."""
 
     # In-memory store for pending issue drafts
     # Key: draft_id (hash), Value: IssueDraft
@@ -94,7 +94,7 @@ class IssueHandler:
         context: MessageContext,
         args: str = "",
     ) -> None:
-        """Handle /issue command.
+        """Handle /req command.
 
         Args:
             context: Message context
@@ -339,7 +339,7 @@ Return ONLY the JSON object, no other text."""
         if not draft:
             await self.im_client.send_message(
                 context,
-                "❌ Issue draft expired or not found. Please run `/issue` again.",
+                "❌ Issue draft expired or not found. Please run `/req` again.",
             )
             return
 
@@ -407,7 +407,7 @@ Return ONLY the JSON object, no other text."""
         if not draft:
             await self.im_client.send_message(
                 context,
-                "❌ Issue draft expired or not found. Please run `/issue` again.",
+                "❌ Issue draft expired or not found. Please run `/req` again.",
             )
             return
 

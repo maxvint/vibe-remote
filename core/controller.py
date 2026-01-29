@@ -242,6 +242,7 @@ class Controller:
             "settings": self.settings_handler.handle_settings,
             "stop": self.command_handler.handle_stop,
             "issue": self.command_handler.handle_issue,
+            "req": self.command_handler.handle_issue,
         }
 
         # Register callbacks with the IM client
