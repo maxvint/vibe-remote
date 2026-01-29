@@ -2,8 +2,6 @@
 
 The `/req` command allows you to extract requirements from Slack channel discussions and automatically create GitHub issues.
 
-> **Alias:** `/issue` also works but may conflict with GitHub's built-in command.
-
 ## Overview
 
 This feature:
