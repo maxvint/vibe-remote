@@ -733,6 +733,14 @@ class SlackBot(BaseIMClient):
                     handler = self.on_command_callbacks[command]
                     await handler(context, args)
                     return
+                else:
+                    # Send error message for unknown command instead of passing to agent
+                    available_cmds = ", ".join(f"/{c}" for c in self.on_command_callbacks.keys())
+                    await self.send_message(
+                        context,
+                        f"❌ Unknown command: `/{command}`\n\nAvailable commands: {available_cmds}",
+                    )
+                    return
 
             # Handle as regular message
             if self.on_message_callback:
@@ -793,6 +801,13 @@ class SlackBot(BaseIMClient):
                     return
                 else:
                     logger.warning(f"Command '{command}' not found in callbacks")
+                    # Send error message for unknown command instead of passing to agent
+                    available_cmds = ", ".join(f"/{c}" for c in self.on_command_callbacks.keys())
+                    await self.send_message(
+                        context,
+                        f"❌ Unknown command: `/{command}`\n\nAvailable commands: {available_cmds}",
+                    )
+                    return
 
             # Handle as regular message
             logger.info(f"Handling as regular message: '{text}'")
@@ -2185,6 +2200,8 @@ class SlackBot(BaseIMClient):
         # Register command handlers
         if on_command:
             self.command_handlers.update(on_command)
+            logger.info(f"Registered commands: {list(on_command.keys())}")
+            logger.info(f"on_command_callbacks now contains: {list(self.on_command_callbacks.keys())}")
 
         # Register any slash command handlers passed in kwargs
         if "on_slash_command" in kwargs:
